@@ -1,0 +1,1198 @@
+//tenant.entity
+
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
+
+@Schema({ timestamps: true })
+export class Tenant {
+  @Prop({ required: true })
+  name: string;
+}
+
+export type TenantDocument = Tenant & Document;
+export const TenantSchema = SchemaFactory.createForClass(Tenant);
+
+
+//User.entity
+
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
+
+@Schema({ timestamps: true })
+export class User {
+  @Prop({ required: true, unique: true })
+  email: string;
+
+  @Prop({ required: true })
+  password: string;
+
+  @Prop({ required: true })
+  tenant_id: string;
+
+  @Prop({ required: true, enum: ['superadmin', 'admin', 'user'] })
+  role: string;
+}
+
+export type UserDocument = User & Document;
+export const UserSchema = SchemaFactory.createForClass(User);
+
+
+//Refresh-RefreshToken.schema
+
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
+
+@Schema({ timestamps: true })
+export class RefreshToken {
+  @Prop({ required: true })
+  token: string;       
+
+  @Prop({ required: true })
+  userId: string;
+
+  @Prop({ required: true })
+  tenantId: string;
+
+  @Prop({ required: true })
+  role: string;
+}
+
+export type RefreshTokenDocument = RefreshToken & Document;
+export const RefreshTokenSchema = SchemaFactory.createForClass(RefreshToken);
+
+//auth model
+
+import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
+import { MongooseModule } from '@nestjs/mongoose';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AuthService } from './auth.service';
+import { AuthController } from './auth.controller';
+import { JwtStrategy } from './jwt.strategy';
+import { RefreshToken, RefreshTokenSchema } from './schemas/refresh-token.schema';
+import { User, UserSchema } from '../user/entities/user.entity';
+
+@Module({
+  imports: [
+    ConfigModule,
+    PassportModule,
+    // JWT config
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get<string>('JWT_SECRET'),
+        signOptions: { expiresIn: configService.get<string>('ACCESS_TOKEN_EXP') || '15m' },
+      }),
+      inject: [ConfigService],
+    }),
+    MongooseModule.forFeature([
+      { name: RefreshToken.name, schema: RefreshTokenSchema },
+      { name: User.name, schema: UserSchema },
+    ]),
+  ],
+  controllers: [AuthController],
+  providers: [AuthService, JwtStrategy],
+  exports: [AuthService],
+})
+export class AuthModule {}
+
+
+//auth controller
+
+import { Controller, Post, Body, UnauthorizedException } from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { RegisterDto } from './dto/register.dto';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+
+@ApiTags('Auth') 
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly authService: AuthService) {}
+
+  @Post('login')
+  @ApiOperation({ summary: 'User login' })
+  @ApiResponse({
+    status: 200,
+    description: 'Successful, returns { accessToken, refreshToken }',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized if invalid credentials',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        email: { type: 'string', example: 'user@example.com' },
+        password: { type: 'string', example: 'MySecret123' },
+      },
+    },
+  })
+  async login(@Body() body: { email: string; password: string }) {
+    const user = await this.authService.validateUser(body.email, body.password);
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    return this.authService.login(user);
+  }
+
+  @Post('refresh-token')
+  @ApiOperation({ summary: 'Refresh tokens' })
+  @ApiResponse({
+    status: 200,
+    description: 'Rotates refresh token, returns new token pair',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        token: { type: 'string', example: 'oldRefreshTokenXYZ' },
+      },
+    },
+  })
+  async refresh(@Body() body: { token: string }) {
+    return this.authService.refresh(body.token);
+  }
+
+  @Post('register')
+  @ApiOperation({ summary: 'Register a new user (example or dev usage)' })
+  @ApiResponse({ status: 201, description: 'User created successfully' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        email: { type: 'string', example: 'newuser@example.com' },
+        password: { type: 'string', example: 'MySecret123' },
+        tenantId: { type: 'string', example: 'tenant_abc' },
+        role: {
+          type: 'string',
+          example: 'user',
+          description: 'Role can be user/admin/superadmin (optional)',
+        },
+      },
+    },
+  })
+  async register(@Body() body: RegisterDto) {
+    const { email, password, tenantId, role } = body;
+    return this.authService.register(email, password, tenantId, role);
+  }
+}
+
+
+//registerdto
+
+import { IsEmail, IsNotEmpty, IsString, IsOptional, IsEnum } from 'class-validator';
+
+export class RegisterDto {
+  @IsEmail()
+  email: string;
+
+  @IsNotEmpty()
+  @IsString()
+  password: string;
+
+  @IsNotEmpty()
+  @IsString()
+  tenantId: string;
+  
+  @IsOptional()
+  @IsString()
+  @IsEnum(['superadmin', 'admin', 'user'])
+  role?: string;
+}
+
+
+//jwt strategy
+
+import { Injectable } from '@nestjs/common';
+import { PassportStrategy } from '@nestjs/passport';
+import { ExtractJwt, Strategy } from 'passport-jwt';
+
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy) {
+  constructor() {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      secretOrKey: process.env.JWT_SECRET,
+      ignoreExpiration: false,
+    });
+  }
+
+  async validate(payload: any) {
+    // payload => { sub: <userId>, aud: <tenantId>, role: <role>, iat, exp }
+    return payload; 
+  }
+}
+
+
+//jwt guard
+
+import { Injectable } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+
+@Injectable()
+export class JwtAuthGuard extends AuthGuard('jwt') {}
+
+
+//authservice
+
+import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { JwtService } from '@nestjs/jwt';
+import { Model } from 'mongoose';
+import * as bcrypt from 'bcryptjs';
+
+import { User, UserDocument } from '../user/entities/user.entity';
+import {
+  RefreshToken,
+  RefreshTokenDocument,
+} from './schemas/refresh-token.schema';
+
+@Injectable()
+export class AuthService {
+  constructor(
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(RefreshToken.name)
+    private rtModel: Model<RefreshTokenDocument>,
+    private jwtService: JwtService,
+  ) {}
+
+  async validateUser(
+    email: string,
+    pass: string,
+  ): Promise<UserDocument | null> {
+    const user = await this.userModel.findOne({ email });
+    if (!user) return null;
+
+    const match = await bcrypt.compare(pass, user.password);
+    if (!match) return null;
+
+    return user;
+  }
+
+  async login(user: UserDocument) {
+    const payload = {
+      sub: user._id.toString(),
+      aud: user.tenant_id,
+      role: user.role,
+    };
+
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: process.env.ACCESS_TOKEN_EXP || '15m',
+    });
+
+    const refreshToken = this.jwtService.sign(payload, {
+      expiresIn: process.env.REFRESH_TOKEN_EXP || '7d',
+    });
+
+    await this.rtModel.create({
+      token: refreshToken,
+      userId: payload.sub,
+      tenantId: payload.aud,
+      role: payload.role,
+    });
+
+    return { accessToken, refreshToken };
+  }
+
+  async refresh(oldToken: string) {
+    let payload: any;
+    try {
+      payload = this.jwtService.verify(oldToken, {
+        secret: process.env.JWT_SECRET,
+      });
+    } catch (err) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const existingToken = await this.rtModel.findOne({ token: oldToken });
+    if (!existingToken) {
+      throw new UnauthorizedException('Refresh token not found or revoked');
+    }
+
+    await this.rtModel.deleteOne({ token: oldToken })
+
+    const newPayload = {
+      sub: payload.sub,
+      aud: payload.aud,
+      role: payload.role,
+    };
+
+    const newAccessToken = this.jwtService.sign(newPayload, {
+      expiresIn: process.env.ACCESS_TOKEN_EXP || '15m',
+    });
+
+    const newRefreshToken = this.jwtService.sign(newPayload, {
+      expiresIn: process.env.REFRESH_TOKEN_EXP || '7d',
+    });
+
+    await this.rtModel.create({
+      token: newRefreshToken,
+      userId: newPayload.sub,
+      tenantId: newPayload.aud,
+      role: newPayload.role,
+    });
+
+    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+  }
+
+  async register(email: string, password: string, tenantId: string, role: string = 'user') {
+       const existingUser = await this.userModel.findOne({ email });
+    if (existingUser) {
+      throw new ConflictException('Email already in use');
+    }   
+    const hashed = await bcrypt.hash(password, 10);    
+    const newUser = new this.userModel({
+      email,
+      password: hashed,
+      tenant_id: tenantId,
+      role,
+    });
+    return newUser.save();
+  }
+}
+
+
+//auth service spec
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { AuthService } from './auth.service';
+import { getModelToken } from '@nestjs/mongoose';
+import { JwtService } from '@nestjs/jwt';
+
+describe('AuthService', () => {
+  let service: AuthService;
+
+  const mockUserModel = {
+    findOne: jest.fn(),
+  };
+  const mockRefreshTokenModel = {
+    create: jest.fn(),
+    findOne: jest.fn(),
+    deleteOne: jest.fn(),
+  };
+  const mockJwtService = {
+    sign: jest.fn(),
+    verify: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: getModelToken('User'), useValue: mockUserModel },
+        { provide: getModelToken('RefreshToken'), useValue: mockRefreshTokenModel },
+        { provide: JwtService, useValue: mockJwtService },
+      ],
+    }).compile();
+
+    service = module.get<AuthService>(AuthService);
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+
+  describe('login', () => {
+    it('should return access and refresh token', async () => {
+      mockJwtService.sign.mockReturnValueOnce('accessToken').mockReturnValueOnce('refreshToken');
+      mockRefreshTokenModel.create.mockResolvedValue(true);
+
+      const user = { _id: '123', tenant_id: 'tenantXYZ', role: 'user' } as any;
+      const result = await service.login(user);
+      expect(result).toEqual({ accessToken: 'accessToken', refreshToken: 'refreshToken' });
+      expect(mockRefreshTokenModel.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('refresh', () => {
+    it('should rotate tokens', async () => {
+      mockJwtService.verify.mockReturnValue({ sub: '123', aud: 'tenantXYZ', role: 'user' });
+      mockRefreshTokenModel.findOne.mockResolvedValue({ token: 'oldToken', delete: jest.fn() });
+      mockRefreshTokenModel.deleteOne.mockResolvedValue(true);
+      mockJwtService.sign.mockReturnValueOnce('newAccess').mockReturnValueOnce('newRefresh');
+      mockRefreshTokenModel.create.mockResolvedValue(true);
+
+      const result = await service.refresh('oldToken');
+      expect(result).toEqual({ accessToken: 'newAccess', refreshToken: 'newRefresh' });
+      expect(mockRefreshTokenModel.deleteOne).toHaveBeenCalledWith({ token: 'oldToken' });
+    });
+  });
+});
+
+
+//tenant module
+
+import { Module } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
+
+import { TenantController } from './tenant.controller';
+import { TenantService } from './tenant.service';
+import { Tenant, TenantSchema } from './entities/tenant.entity';
+import { User, UserSchema } from '../user/entities/user.entity';
+
+@Module({
+  imports: [
+    MongooseModule.forFeature([
+      { name: Tenant.name, schema: TenantSchema },
+      { name: User.name, schema: UserSchema },
+    ]),
+  ],
+  controllers: [TenantController],
+  providers: [TenantService],
+})
+export class TenantModule {}
+
+
+//tenant service
+
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Tenant, TenantDocument } from './entities/tenant.entity';
+import { User, UserDocument } from '../user/entities/user.entity';
+
+@Injectable()
+export class TenantService {
+  constructor(
+    @InjectModel(Tenant.name) private tenantModel: Model<TenantDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+  ) {}
+
+  async createTenant(name: string) {
+    return this.tenantModel.create({ name });
+  }
+
+  async defineAdmin(tenantId: string, userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.role = 'admin';
+    user.tenant_id = tenantId;
+    return user.save();
+  }
+}
+
+
+//tenant controller
+
+import { Controller, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { TenantService } from './tenant.service';
+import { JwtAuthGuard } from '../guards/jwt.guard';
+import { RolesGuard } from '../guards/roles.guard';
+import { Roles } from '../decorators/roles.decorator';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiBody,
+} from '@nestjs/swagger';
+
+@ApiTags('Tenant')
+@ApiBearerAuth()
+@Controller('tenants')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class TenantController {
+  constructor(private tenantService: TenantService) {}
+
+  @Post()
+  @Roles('superadmin')
+  @ApiOperation({ summary: 'Create a new tenant (superadmin only)' })
+  @ApiResponse({
+    status: 201,
+    description: 'Creates a new tenant document in the DB',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', example: 'Tenant XYZ' },
+      },
+    },
+  })
+  async createTenant(@Body() body: { name: string }) {
+    return this.tenantService.createTenant(body.name);
+  }
+
+  @Post(':id/access')
+  @Roles('superadmin')
+  @ApiOperation({ summary: 'Define a user as admin for this tenant' })
+  @ApiResponse({
+    status: 200,
+    description: 'User role updated to admin in the specified tenant',
+  })
+  @ApiParam({
+    name: 'id',
+    type: 'string',
+    description: 'The tenant ID in the path',
+    example: 'tenant123',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string', example: 'user456' },
+      },
+    },
+  })
+  async defineAdmin(
+    @Param('id') tenantId: string,
+    @Body('userId') userId: string,
+  ) {
+    return this.tenantService.defineAdmin(tenantId, userId);
+  }
+}
+
+
+//user module
+
+import { Module } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
+import { UserController, ProfileController } from './user.controller';
+import { UserService } from './user.service';
+import { User, UserSchema } from './entities/user.entity';
+
+@Module({
+  imports: [
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+  ],
+  controllers: [UserController, ProfileController],
+  providers: [UserService],
+  exports: [UserService],
+})
+export class UserModule {}
+
+
+//auth controller spec
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+
+describe('AuthController', () => {
+  let controller: AuthController;
+  let mockAuthService = {
+    validateUser: jest.fn(),  
+    login: jest.fn(),
+    refresh: jest.fn(),
+  };
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [
+        { provide: AuthService, useValue: mockAuthService },
+      ],
+    }).compile();
+
+    controller = module.get<AuthController>(AuthController);
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+
+  describe('login', () => {
+    it('should return tokens from AuthService', async () => {
+      
+      mockAuthService.validateUser.mockResolvedValue({ _id: 'someUserId' });
+      mockAuthService.login.mockResolvedValue({ accessToken: 'abc', refreshToken: 'xyz' });
+      const body = { email: 'test@mail.com', password: 'secret' };
+      const result = await controller.login(body); 
+      expect(mockAuthService.validateUser).toHaveBeenCalledWith('test@mail.com', 'secret');
+      expect(mockAuthService.login).toHaveBeenCalledWith({ _id: 'someUserId' });
+      expect(result).toEqual({ accessToken: 'abc', refreshToken: 'xyz' });
+    });
+  });
+
+  describe('refresh', () => {
+    it('should return a new token pair', async () => {
+      mockAuthService.refresh.mockResolvedValue({ accessToken: 'newA', refreshToken: 'newR' });
+      const body = { token: 'oldRefresh' };
+
+      const result = await controller.refresh(body);
+      expect(mockAuthService.refresh).toHaveBeenCalledWith('oldRefresh');
+      expect(result).toEqual({ accessToken: 'newA', refreshToken: 'newR' });
+    });
+  });
+});
+
+
+//tenant controller spec
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { TenantController } from './tenant.controller';
+import { TenantService } from './tenant.service';
+
+describe('TenantController', () => {
+  let controller: TenantController;
+  let mockTenantService = {
+    createTenant: jest.fn(),
+    defineAdmin: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [TenantController],
+      providers: [
+        { provide: TenantService, useValue: mockTenantService },
+      ],
+    }).compile();
+
+    controller = module.get<TenantController>(TenantController);
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+
+  describe('createTenant', () => {
+    it('should create a tenant', async () => {
+      mockTenantService.createTenant.mockResolvedValue({ _id: 'tenant123', name: 'Tenant Alpha' });
+
+      const body = { name: 'Tenant Alpha' };
+      const result = await controller.createTenant(body);
+      expect(mockTenantService.createTenant).toHaveBeenCalledWith('Tenant Alpha');
+      expect(result).toEqual({ _id: 'tenant123', name: 'Tenant Alpha' });
+    });
+  });
+
+  describe('defineAdmin', () => {
+    it('should define a user as admin', async () => {
+      const param = 'tenant123';
+      const body = { userId: 'user456' };
+      mockTenantService.defineAdmin.mockResolvedValue({ _id: 'user456', role: 'admin' });
+
+      const result = await controller.defineAdmin(param, body.userId);
+      expect(mockTenantService.defineAdmin).toHaveBeenCalledWith('tenant123', 'user456');
+      expect(result).toEqual({ _id: 'user456', role: 'admin' });
+    });
+  });
+});
+
+
+//tenant service spec
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { getModelToken } from '@nestjs/mongoose';
+import { TenantService } from './tenant.service';
+
+describe('TenantService', () => {
+  let service: TenantService;
+
+  const mockTenantModel = {
+    create: jest
+      .fn()
+      .mockResolvedValue({ _id: 'tenantXYZ', name: 'Tenant ABC' }),
+  };
+  const mockUserModel = {
+    findById: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        TenantService,
+        { provide: getModelToken('Tenant'), useValue: mockTenantModel },
+        { provide: getModelToken('User'), useValue: mockUserModel },
+      ],
+    }).compile();
+
+    service = module.get<TenantService>(TenantService);
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+
+  describe('createTenant', () => {
+    it('should create new tenant doc', async () => {
+      mockTenantModel.create = jest
+        .fn()
+        .mockReturnValue({
+          _id: 'tenantXYZ',
+          name: 'Tenant ABC',
+          save: jest.fn(),
+        });
+      const result = await service.createTenant('Tenant ABC');
+      expect(result.name).toBe('Tenant ABC');
+    });
+  });
+
+  describe('defineAdmin', () => {
+    it('should set user as admin', async () => {
+      mockUserModel.findById.mockResolvedValue({
+        _id: 'user123',
+        role: 'user',
+        save: jest.fn().mockResolvedValue({
+          _id: 'user123',
+          role: 'admin',
+          tenant_id: 'tenantXYZ',
+        }),
+      });
+      const updated = await service.defineAdmin('tenantXYZ', 'user123');
+      expect(updated.role).toBe('admin');
+      expect(updated.tenant_id).toBe('tenantXYZ');
+    });
+  });
+});
+
+
+//usercontroller spec
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { UserController, ProfileController } from './user.controller';
+import { UserService } from './user.service';
+
+describe('UserController', () => {
+  let userController: UserController;
+  let profileController: ProfileController;
+  let mockUserService = {
+    createUser: jest.fn(),
+    findUsersByTenant: jest.fn(),
+    findById: jest.fn(),
+    updateProfile: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [UserController, ProfileController],
+      providers: [
+        { provide: UserService, useValue: mockUserService },
+      ],
+    }).compile();
+
+    userController = module.get<UserController>(UserController);
+    profileController = module.get<ProfileController>(ProfileController);
+  });
+
+  it('should be defined', () => {
+    expect(userController).toBeDefined();
+    expect(profileController).toBeDefined();
+  });
+
+  describe('createUser', () => {
+    it('should call userService.createUser', async () => {
+      mockUserService.createUser.mockResolvedValue({ email: 'tester@mail.com' });
+
+      const req = { user: { aud: 'tenant123' } };
+      const body = { email: 'tester@mail.com', password: '12345' };
+      const result = await userController.createUser(req, body);
+
+      expect(mockUserService.createUser).toHaveBeenCalledWith('tester@mail.com', '12345', 'tenant123');
+      expect(result.email).toBe('tester@mail.com');
+    });
+  });
+
+  describe('listUsers', () => {
+    it('should list users in a tenant', async () => {
+      mockUserService.findUsersByTenant.mockResolvedValue([{ email: 'u1@mail.com' }]);
+      const req = { user: { aud: 'tenant123' } };
+
+      const result = await userController.listUsers(req);
+      expect(mockUserService.findUsersByTenant).toHaveBeenCalledWith('tenant123');
+      expect(result).toEqual([{ email: 'u1@mail.com' }]);
+    });
+  });
+
+  describe('getProfile', () => {
+    it('should get user profile', async () => {
+      mockUserService.findById.mockResolvedValue({ email: 'me@mail.com' });
+      const req = { user: { sub: 'user123' } };
+      const result = await profileController.getProfile(req);
+      expect(mockUserService.findById).toHaveBeenCalledWith('user123');
+      expect(result).toEqual({ email: 'me@mail.com' });
+    });
+  });
+
+  describe('updateProfile', () => {
+    it('should update user profile', async () => {
+      mockUserService.updateProfile.mockResolvedValue({ email: 'new@mail.com' });
+      const req = { user: { sub: 'user123', aud: 'tenant123' } };
+      const body = { email: 'new@mail.com' };
+
+      const result = await profileController.updateProfile(req, body);
+      expect(mockUserService.updateProfile).toHaveBeenCalledWith(req.user, body);
+      expect(result).toEqual({ email: 'new@mail.com' });
+    });
+  });
+});
+
+
+//user service spec
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { getModelToken } from '@nestjs/mongoose';
+import { UserService } from './user.service';
+import * as bcrypt from 'bcryptjs';
+
+describe('UserService', () => {
+  let service: UserService;
+
+  const mockUserModel = {
+    create: jest.fn(),
+    find: jest.fn(),
+    findById: jest.fn(),
+    save: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        UserService,
+        { provide: getModelToken('User'), useValue: mockUserModel },
+      ],
+    }).compile();
+
+    service = module.get<UserService>(UserService);
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+
+  describe('createUser', () => {
+    it('should hash password and save user', async () => {
+      const hashedPass = await bcrypt.hash('plainPass', 10);
+      mockUserModel.create.mockResolvedValue({ email: 'test@mail.com', password: hashedPass });
+
+      const result = await service.createUser('test@mail.com', 'plainPass', 'tenant123');
+      expect(result.password).toBeDefined();
+      expect(mockUserModel.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('findUsersByTenant', () => {
+    it('should return all users in a tenant', async () => {
+      mockUserModel.find.mockResolvedValue([{ email: 'one@mail.com' }, { email: 'two@mail.com' }]);
+      const result = await service.findUsersByTenant('tenant123');
+      expect(result.length).toBe(2);
+    });
+  });
+
+  describe('findById', () => {
+    it('should return a user by id', async () => {
+      mockUserModel.findById.mockResolvedValue({ email: 'me@mail.com' });
+      const result = await service.findById('user123');
+      expect(result.email).toBe('me@mail.com');
+    });
+  });
+
+  describe('updateProfile', () => {
+    it('should update user email or password', async () => {
+      mockUserModel.findById.mockResolvedValue({
+        _id: 'user123',
+        email: 'old@mail.com',
+        password: 'oldPass',
+        tenant_id: 'tenant123',
+        save: jest.fn().mockResolvedValue({ email: 'new@mail.com' }),
+      });
+
+      const requestUser = { sub: 'user123', aud: 'tenant123', role: 'user' };
+      const body = { email: 'new@mail.com' };
+      const result = await service.updateProfile(requestUser, body);
+      expect(result.email).toBe('new@mail.com');
+    });
+  });
+});
+
+
+//app controller spec
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+
+describe('AppController', () => {
+  let appController: AppController;
+
+  beforeEach(async () => {
+    const app: TestingModule = await Test.createTestingModule({
+      controllers: [AppController],
+      providers: [AppService],
+    }).compile();
+
+    appController = app.get<AppController>(AppController);
+  });
+
+  describe('root', () => {
+    it('should return "Hello World!"', () => {
+      expect(appController.getHello()).toBe('Hello World!');
+    });
+  });
+});
+
+//appe2e spec
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
+import { AppModule } from '../src/app.module';
+import * as request from 'supertest';
+
+describe('App E2E', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('/ (GET)', () => {
+    return request(app.getHttpServer())
+      .get('/')
+      .expect(200)
+      .expect('Hello World!'); 
+  });
+
+  describe('/auth/login (POST)', () => {
+    it('should return 401 if invalid credentials', () => {
+      return request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'fake@mail.com', password: 'wrong' })
+        .expect(401);
+    });
+
+    
+    it('should return tokens with valid credentials', async () => {
+            const res = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'test@mail.com', password: '12345' })
+        .expect(200);
+
+      expect(res.body.accessToken).toBeDefined();
+      expect(res.body.refreshToken).toBeDefined();
+    });
+  });
+});
+
+
+//user service
+
+import {
+    Injectable,
+    NotFoundException,
+    ForbiddenException,
+  } from '@nestjs/common';
+  import { InjectModel } from '@nestjs/mongoose';
+  import { Model } from 'mongoose';
+  import { User, UserDocument } from './entities/user.entity';
+  import * as bcrypt from 'bcryptjs';
+  
+  @Injectable()
+  export class UserService {
+    constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+  
+    async createUser(email: string, password: string, tenantId: string) {
+      const hashed = await bcrypt.hash(password, 10);
+      return this.userModel.create({
+        email,
+        password: hashed,
+        tenant_id: tenantId,
+        role: 'user',
+      });
+    }
+  
+    async findUsersByTenant(tenantId: string) {
+      return this.userModel.find({ tenant_id: tenantId });
+    }
+  
+    async findById(userId: string) {
+      const user = await this.userModel.findById(userId);
+      if (!user) throw new NotFoundException('User not found');
+      return user;
+    }
+  
+    async updateProfile(
+      requestUser: any,
+      body: { email?: string; password?: string },
+    ) {
+      const user = await this.userModel.findById(requestUser.sub);
+      if (!user) throw new NotFoundException('User not found');
+  
+      if (
+        user.tenant_id !== requestUser.aud &&
+        requestUser.role !== 'superadmin'
+      ) {
+        throw new ForbiddenException('Not authorized to update this profile');
+      }
+  
+      if (body.email) user.email = body.email;
+      if (body.password) {
+        user.password = await bcrypt.hash(body.password, 10);
+      }
+  
+      return user.save();
+    }
+  }
+
+  //user controller
+
+  import {
+    Controller,
+    Get,
+    Post,
+    Body,
+    Put,
+    Req,
+    Query,
+    UseGuards,
+  } from '@nestjs/common';
+  import { UserService } from './user.service';
+  import { JwtAuthGuard } from '../guards/jwt.guard';
+  import { RolesGuard } from '../guards/roles.guard';
+  import { Roles } from '../decorators/roles.decorator';
+  import {
+    ApiTags,
+    ApiBearerAuth,
+    ApiOperation,
+    ApiResponse,
+    ApiQuery,
+  } from '@nestjs/swagger';
+  
+  @ApiTags('User')
+  @ApiBearerAuth()
+  @Controller('users')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  export class UserController {
+    constructor(private userService: UserService) {}
+  
+    @Post()
+    @Roles('admin')
+    @ApiOperation({ summary: 'Create a new user in the tenant (admin only)' })
+    @ApiResponse({
+      status: 201,
+      description: 'A new user is created under the admin’s tenant',
+    })
+    async createUser(
+      @Req() req,
+      @Body() body: { email: string; password: string },
+    ) {
+      const tenantId = req.user.aud;
+      return this.userService.createUser(body.email, body.password, tenantId);
+    }
+  
+    @Get()
+    @Roles('admin')
+    @ApiOperation({ summary: 'List all users in your tenant (admin only)' })
+    @ApiResponse({
+      status: 200,
+      description: 'Returns an array of user objects',
+    })
+    @ApiQuery({
+      name: 'search',
+      required: false,
+      type: String,
+      description: 'Optional search term to filter by email or name',
+      example: 'john',
+    })
+    async listUsers(@Req() req, @Query('search') searchTerm?: string) {
+      const tenantId = req.user.aud;      
+      return this.userService.findUsersByTenant(tenantId);
+    }
+  }
+  
+  @ApiTags('Profile')
+  @ApiBearerAuth()
+  @Controller('profile')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  export class ProfileController {
+    constructor(private userService: UserService) {}
+  
+    @Get()
+    @Roles('user', 'admin', 'superadmin')
+    @ApiOperation({ summary: 'Get your own profile' })
+    @ApiResponse({
+      status: 200,
+      description: 'Returns the current user’s profile document',
+    })
+    async getProfile(@Req() req) {
+      return this.userService.findById(req.user.sub);
+    }
+  
+    @Put()
+    @Roles('user', 'admin', 'superadmin')
+    @ApiOperation({ summary: 'Update your own profile (email/password)' })
+    @ApiResponse({
+      status: 200,
+      description: 'Profile updated successfully, returns updated doc',
+    })
+    async updateProfile(@Req() req, @Body() body: any) {
+      return this.userService.updateProfile(req.user, body);
+    }
+  }
+  
+
+  //roles decorator
+
+  import { SetMetadata } from '@nestjs/common';
+
+export const ROLES_KEY = 'roles';
+export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
+
+
+//tenant guard
+
+import {
+    Injectable,
+    CanActivate,
+    ExecutionContext,
+    ForbiddenException,
+  } from '@nestjs/common';
+  
+  @Injectable()
+  export class TenantGuard implements CanActivate {
+    canActivate(context: ExecutionContext): boolean {
+      const request = context.switchToHttp().getRequest();
+      const user = request.user;
+      const { tenantId } = request.params;
+      if (user.role === 'superadmin') return true;
+      if (user.aud !== tenantId) {
+        throw new ForbiddenException('You do not belong to this tenant');
+      }
+      return true;
+    }
+  }
+
+  
+  //main.ts
+
+  import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.enableCors(); 
+  app.useGlobalPipes(new ValidationPipe());
+  const config = new DocumentBuilder()
+    .setTitle('Multi-Tenant RBAC')
+    .setDescription('API documentation for RBAC system')
+    .setVersion('1.0')
+    .addBearerAuth() // enable JWT token usage in Swagger
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document);
+  await app.listen(process.env.PORT ?? 3000);
+}
+bootstrap();
+
+
+//env
+
+MONGO_URI = 'mongodb+srv://benny2828:WSTyW9dlH3PJhhAU@cluster0.fea79.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0'
+JWT_SECRET= my_super_secret_key
+REFRESH_TOKEN_EXP= 7d
