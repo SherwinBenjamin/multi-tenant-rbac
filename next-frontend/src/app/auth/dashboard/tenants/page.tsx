@@ -3,11 +3,12 @@
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { fetchWithAuth } from "@/lib/api";
 
 export default function TenantsPage() {
-  const [tenants, setTenants] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [tenants] = useState<any[]>([]);
   const [tenantName, setTenantName] = useState("");
 
   // useEffect(() => {

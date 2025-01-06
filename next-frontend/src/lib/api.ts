@@ -26,7 +26,7 @@ async function refreshTokens() {
     setCookie("ACCESS_TOKEN", data.accessToken);
     setCookie("REFRESH_TOKEN", data.refreshToken);
     return true;
-  } catch (err) {
+  } catch {
     return false;
   }
 }
@@ -34,6 +34,7 @@ async function refreshTokens() {
 export async function fetchWithAuth(
   url: string,
   options: RequestInit = {}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> {
   // Build new Headers from whatever might be in options.headers
   const headers = new Headers(options.headers);

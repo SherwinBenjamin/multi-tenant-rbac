@@ -23,7 +23,7 @@ export default function RegisterPage() {
       if (!res.ok) throw new Error("Registration failed")
       // upon success, go to login
       router.push("/auth/login")
-    } catch (err) {
+    } catch {
       alert("Registration failed.")
     }
   }

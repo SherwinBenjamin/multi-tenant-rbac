@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { fetchWithAuth } from "@/lib/api";
 
 export default function ProfilePage() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [profile, setProfile] = useState<any>({});
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
