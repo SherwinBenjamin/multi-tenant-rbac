@@ -1,11 +1,11 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-	darkMode: ["class"],
-	content: [
-	  "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
-	  "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-	  "./src/**/*.{ts,tsx,js,jsx}"
-	],
+  darkMode: ["class"],
+  content: [
+    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/**/*.{ts,tsx,js,jsx}"
+  ],
   theme: {
   	extend: {
   		borderRadius: {
@@ -57,6 +57,7 @@ module.exports = {
   		}
   	}
   },
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   plugins: [require("tailwindcss-animate")],
   
 }

@@ -54,7 +54,7 @@ export async function middleware(request: NextRequest) {
     }
 
     return NextResponse.next();
-  } catch (err) {
+  } catch {
     // If any error decoding => force re-login
     const resp = NextResponse.redirect(new URL("/auth/login", request.url));
     resp.cookies.delete("ACCESS_TOKEN");
