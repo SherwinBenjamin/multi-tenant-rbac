@@ -30,9 +30,16 @@ describe('UserService', () => {
   describe('createUser', () => {
     it('should hash password and save user', async () => {
       const hashedPass = await bcrypt.hash('plainPass', 10);
-      mockUserModel.create.mockResolvedValue({ email: 'test@mail.com', password: hashedPass });
+      mockUserModel.create.mockResolvedValue({
+        email: 'test@mail.com',
+        password: hashedPass,
+      });
 
-      const result = await service.createUser('test@mail.com', 'plainPass', 'tenant123');
+      const result = await service.createUser(
+        'test@mail.com',
+        'plainPass',
+        'tenant123',
+      );
       expect(mockUserModel.create).toHaveBeenCalled();
       expect(result.password).toBe(hashedPass);
     });
@@ -40,7 +47,10 @@ describe('UserService', () => {
 
   describe('findUsersByTenant', () => {
     it('should return all users in a tenant', async () => {
-      mockUserModel.find.mockResolvedValue([{ email: 'one@mail.com' }, { email: 'two@mail.com' }]);
+      mockUserModel.find.mockResolvedValue([
+        { email: 'one@mail.com' },
+        { email: 'two@mail.com' },
+      ]);
       const result = await service.findUsersByTenant('tenant123');
       expect(result.length).toBe(2);
     });

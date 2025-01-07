@@ -3,28 +3,28 @@
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { fetchWithAuth } from "@/lib/api";
 
 export default function TenantsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [tenants] = useState<any[]>([]);
+  const [tenants,setTenants] = useState<any[]>([]);
   const [tenantName, setTenantName] = useState("");
 
-  // useEffect(() => {
-  //   loadTenants();
-  // }, []);
+  useEffect(() => {
+    loadTenants();
+  }, []);
 
-  // async function loadTenants() {
-  //   try {
-  //     const data = await fetchWithAuth(
-  //       `${process.env.NEXT_PUBLIC_BACKEND_URL}/tenants`
-  //     );
-  //     setTenants(data);
-  //   } catch (err) {
-  //     console.error("Failed to load tenants:", err);
-  //   }
-  // }
+  async function loadTenants() {
+    try {
+      const data = await fetchWithAuth(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/tenants`
+      );
+      setTenants(data);
+    } catch (err) {
+      console.error("Failed to load tenants:", err);
+    }
+  }
 
   async function createTenant() {
     try {
@@ -33,7 +33,7 @@ export default function TenantsPage() {
         body: JSON.stringify({ name: tenantName }),
       });
       setTenantName("");
-      // loadTenants();
+      loadTenants();
     } catch (err) {
       console.error("Failed to create tenant:", err);
     }
@@ -47,7 +47,7 @@ export default function TenantsPage() {
       <CardContent className="space-y-4">
         <div className="flex gap-2 items-center">
           <Input
-            placeholder="Tenant ID"
+            placeholder="Tenant Name"
             value={tenantName}
             onChange={(e) => setTenantName(e.target.value)}
           />

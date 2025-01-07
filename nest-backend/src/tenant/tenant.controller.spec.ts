@@ -4,7 +4,7 @@ import { TenantService } from './tenant.service';
 
 describe('TenantController', () => {
   let controller: TenantController;
-  let mockTenantService = {
+  const mockTenantService = {
     createTenant: jest.fn(),
     defineAdmin: jest.fn(),
   };
@@ -12,9 +12,7 @@ describe('TenantController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TenantController],
-      providers: [
-        { provide: TenantService, useValue: mockTenantService },
-      ],
+      providers: [{ provide: TenantService, useValue: mockTenantService }],
     }).compile();
 
     controller = module.get<TenantController>(TenantController);
@@ -26,21 +24,32 @@ describe('TenantController', () => {
 
   describe('createTenant', () => {
     it('should create a tenant', async () => {
-      mockTenantService.createTenant.mockResolvedValue({ _id: 'tenant123', name: 'Tenant Alpha' });
+      mockTenantService.createTenant.mockResolvedValue({
+        _id: 'tenant123',
+        name: 'Tenant Alpha',
+      });
 
       const body = { name: 'Tenant Alpha' };
       const result = await controller.createTenant(body);
-      expect(mockTenantService.createTenant).toHaveBeenCalledWith('Tenant Alpha');
+      expect(mockTenantService.createTenant).toHaveBeenCalledWith(
+        'Tenant Alpha',
+      );
       expect(result).toEqual({ _id: 'tenant123', name: 'Tenant Alpha' });
     });
   });
 
   describe('defineAdmin', () => {
     it('should define a user as admin', async () => {
-      mockTenantService.defineAdmin.mockResolvedValue({ _id: 'user456', role: 'admin' });
+      mockTenantService.defineAdmin.mockResolvedValue({
+        _id: 'user456',
+        role: 'admin',
+      });
 
       const result = await controller.defineAdmin('tenant123', 'user456');
-      expect(mockTenantService.defineAdmin).toHaveBeenCalledWith('tenant123', 'user456');
+      expect(mockTenantService.defineAdmin).toHaveBeenCalledWith(
+        'tenant123',
+        'user456',
+      );
       expect(result).toEqual({ _id: 'user456', role: 'admin' });
     });
   });

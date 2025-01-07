@@ -6,7 +6,9 @@ describe('TenantService', () => {
   let service: TenantService;
 
   const mockTenantModel = {
-    create: jest.fn().mockResolvedValue({ _id: 'tenantXYZ', name: 'Tenant ABC' }),
+    create: jest
+      .fn()
+      .mockResolvedValue({ _id: 'tenantXYZ', name: 'Tenant ABC' }),
   };
   const mockUserModel = {
     findById: jest.fn(),
@@ -31,7 +33,9 @@ describe('TenantService', () => {
   describe('createTenant', () => {
     it('should create new tenant doc', async () => {
       const result = await service.createTenant('Tenant ABC');
-      expect(mockTenantModel.create).toHaveBeenCalledWith({ name: 'Tenant ABC' });
+      expect(mockTenantModel.create).toHaveBeenCalledWith({
+        name: 'Tenant ABC',
+      });
       expect(result.name).toBe('Tenant ABC');
     });
   });

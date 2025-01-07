@@ -24,7 +24,10 @@ describe('AuthService', () => {
       providers: [
         AuthService,
         { provide: getModelToken('User'), useValue: mockUserModel },
-        { provide: getModelToken('RefreshToken'), useValue: mockRefreshTokenModel },
+        {
+          provide: getModelToken('RefreshToken'),
+          useValue: mockRefreshTokenModel,
+        },
         { provide: JwtService, useValue: mockJwtService },
       ],
     }).compile();
@@ -38,27 +41,43 @@ describe('AuthService', () => {
 
   describe('login', () => {
     it('should return access and refresh token', async () => {
-      mockJwtService.sign.mockReturnValueOnce('accessToken').mockReturnValueOnce('refreshToken');
+      mockJwtService.sign
+        .mockReturnValueOnce('accessToken')
+        .mockReturnValueOnce('refreshToken');
       mockRefreshTokenModel.create.mockResolvedValue(true);
 
       const user = { _id: '123', tenant_id: 'tenantXYZ', role: 'user' } as any;
       const result = await service.login(user);
-      expect(result).toEqual({ accessToken: 'accessToken', refreshToken: 'refreshToken' });
+      expect(result).toEqual({
+        accessToken: 'accessToken',
+        refreshToken: 'refreshToken',
+      });
       expect(mockRefreshTokenModel.create).toHaveBeenCalled();
     });
   });
 
   describe('refresh', () => {
     it('should rotate tokens', async () => {
-      mockJwtService.verify.mockReturnValue({ sub: '123', aud: 'tenantXYZ', role: 'user' });
+      mockJwtService.verify.mockReturnValue({
+        sub: '123',
+        aud: 'tenantXYZ',
+        role: 'user',
+      });
       mockRefreshTokenModel.findOne.mockResolvedValue({ token: 'oldToken' });
       mockRefreshTokenModel.deleteOne.mockResolvedValue(true);
-      mockJwtService.sign.mockReturnValueOnce('newAccess').mockReturnValueOnce('newRefresh');
+      mockJwtService.sign
+        .mockReturnValueOnce('newAccess')
+        .mockReturnValueOnce('newRefresh');
       mockRefreshTokenModel.create.mockResolvedValue(true);
 
       const result = await service.refresh('oldToken');
-      expect(result).toEqual({ accessToken: 'newAccess', refreshToken: 'newRefresh' });
-      expect(mockRefreshTokenModel.deleteOne).toHaveBeenCalledWith({ token: 'oldToken' });
+      expect(result).toEqual({
+        accessToken: 'newAccess',
+        refreshToken: 'newRefresh',
+      });
+      expect(mockRefreshTokenModel.deleteOne).toHaveBeenCalledWith({
+        token: 'oldToken',
+      });
     });
   });
 });

@@ -4,7 +4,7 @@ import { AuthService } from './auth.service';
 
 describe('AuthController', () => {
   let controller: AuthController;
-  let mockAuthService = {
+  const mockAuthService = {
     validateUser: jest.fn(),
     login: jest.fn(),
     refresh: jest.fn(),
@@ -14,9 +14,7 @@ describe('AuthController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
-      providers: [
-        { provide: AuthService, useValue: mockAuthService },
-      ],
+      providers: [{ provide: AuthService, useValue: mockAuthService }],
     }).compile();
 
     controller = module.get<AuthController>(AuthController);
@@ -29,11 +27,17 @@ describe('AuthController', () => {
   describe('login', () => {
     it('should return tokens from AuthService', async () => {
       mockAuthService.validateUser.mockResolvedValue({ _id: 'someUserId' });
-      mockAuthService.login.mockResolvedValue({ accessToken: 'abc', refreshToken: 'xyz' });
+      mockAuthService.login.mockResolvedValue({
+        accessToken: 'abc',
+        refreshToken: 'xyz',
+      });
 
       const body = { email: 'test@mail.com', password: 'secret' };
       const result = await controller.login(body);
-      expect(mockAuthService.validateUser).toHaveBeenCalledWith('test@mail.com', 'secret');
+      expect(mockAuthService.validateUser).toHaveBeenCalledWith(
+        'test@mail.com',
+        'secret',
+      );
       expect(mockAuthService.login).toHaveBeenCalledWith({ _id: 'someUserId' });
       expect(result).toEqual({ accessToken: 'abc', refreshToken: 'xyz' });
     });
@@ -41,7 +45,10 @@ describe('AuthController', () => {
 
   describe('refresh', () => {
     it('should return a new token pair', async () => {
-      mockAuthService.refresh.mockResolvedValue({ accessToken: 'newA', refreshToken: 'newR' });
+      mockAuthService.refresh.mockResolvedValue({
+        accessToken: 'newA',
+        refreshToken: 'newR',
+      });
       const body = { token: 'oldRefresh' };
 
       const result = await controller.refresh(body);
@@ -52,7 +59,9 @@ describe('AuthController', () => {
 
   describe('register', () => {
     it('should register a new user', async () => {
-      mockAuthService.register.mockResolvedValue({ email: 'newuser@example.com' });
+      mockAuthService.register.mockResolvedValue({
+        email: 'newuser@example.com',
+      });
       const body = {
         email: 'newuser@example.com',
         password: 'MySecret123',
@@ -61,7 +70,12 @@ describe('AuthController', () => {
       };
 
       const result = await controller.register(body);
-      expect(mockAuthService.register).toHaveBeenCalledWith('newuser@example.com', 'MySecret123', 'tenant_abc', 'user');
+      expect(mockAuthService.register).toHaveBeenCalledWith(
+        'newuser@example.com',
+        'MySecret123',
+        'tenant_abc',
+        'user',
+      );
       expect(result.email).toBe('newuser@example.com');
     });
   });

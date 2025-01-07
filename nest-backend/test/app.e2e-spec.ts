@@ -23,7 +23,7 @@ describe('App E2E', () => {
     return request(app.getHttpServer())
       .get('/')
       .expect(200)
-      .expect('Hello World!'); 
+      .expect('Hello World!');
   });
 
   describe('/auth/login (POST)', () => {

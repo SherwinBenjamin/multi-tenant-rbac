@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Param, UseGuards, Get } from '@nestjs/common';
 import { TenantService } from './tenant.service';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { RolesGuard } from '../guards/roles.guard';
@@ -36,6 +36,18 @@ export class TenantController {
   })
   async createTenant(@Body() body: { name: string }) {
     return this.tenantService.createTenant(body.name);
+  }
+
+  
+  @Get()
+  @Roles('superadmin')
+  @ApiOperation({ summary: 'List all tenants (superadmin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns an array of tenant documents',
+  })
+  async listTenants() {
+    return this.tenantService.findAllTenants();
   }
 
   @Post(':id/access')

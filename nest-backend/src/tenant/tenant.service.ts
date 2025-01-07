@@ -15,6 +15,10 @@ export class TenantService {
     return this.tenantModel.create({ name });
   }
 
+  async findAllTenants() {
+    return this.tenantModel.find();
+  }
+
   async defineAdmin(tenantId: string, userId: string) {
     const user = await this.userModel.findById(userId);
     if (!user) {
