@@ -21,7 +21,7 @@ export default function RegisterPage() {
         body: JSON.stringify({ email, password, tenantId, role }),
       })
       if (!res.ok) throw new Error("Registration failed")
-      // upon success, go to login
+      
       router.push("/auth/login")
     } catch {
       alert("Registration failed.")

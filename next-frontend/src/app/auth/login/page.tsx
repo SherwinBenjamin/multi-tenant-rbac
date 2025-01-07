@@ -1,4 +1,3 @@
-// app/auth/login/page.tsx
 "use client";
 
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -21,13 +20,13 @@ export default function LoginPage() {
       });
       if (!res.ok) throw new Error("Login failed");
 
-      const data = await res.json(); // { accessToken, refreshToken }
+      const data = await res.json();
 
-      // Unify cookie attributes so each overwrites the old
+     
       document.cookie = `ACCESS_TOKEN=${data.accessToken}; Path=/; SameSite=Lax;`;
       document.cookie = `REFRESH_TOKEN=${data.refreshToken}; Path=/; SameSite=Lax;`;
 
-      // redirect to dashboard
+      
       router.push("/auth/dashboard");
     } catch (err) {
       console.error(err);

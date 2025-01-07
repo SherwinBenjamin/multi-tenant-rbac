@@ -29,7 +29,9 @@ export class UserController {
 
   @Post()
   @Roles('admin', 'superadmin')
-  @ApiOperation({ summary: 'Create a new user in the tenant (admin or superadmin)' })
+  @ApiOperation({
+    summary: 'Create a new user in the tenant (admin or superadmin)',
+  })
   @ApiResponse({
     status: 201,
     description: 'A new user is created under the admin’s tenant',
@@ -39,15 +41,14 @@ export class UserController {
     @Body() body: { email: string; password: string },
   ) {
     const tenantId = req.user.aud;
-    // If superadmin, you might allow specifying a tenant in the body
-    // or default to the superadmin’s "aud" (though superadmins typically don't have a single tenant).
-    // For simplicity, we'll do the admin approach:
     return this.userService.createUser(body.email, body.password, tenantId);
   }
 
   @Get()
   @Roles('admin', 'superadmin')
-  @ApiOperation({ summary: 'List users in your tenant if admin, or all if superadmin' })
+  @ApiOperation({
+    summary: 'List users in your tenant if admin, or all if superadmin',
+  })
   @ApiResponse({
     status: 200,
     description: 'Returns an array of user objects',
@@ -60,8 +61,6 @@ export class UserController {
     example: 'john',
   })
   async listUsers(@Req() req, @Query('search') searchTerm?: string) {
-    // if role is superadmin => return all users
-    // if role is admin => return only that tenant’s users
     if (req.user.role === 'superadmin') {
       return this.userService.findAllUsers();
     } else {
